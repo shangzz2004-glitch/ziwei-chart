@@ -21,6 +21,8 @@
 - Added visible GitHub repository and MIT License links to the app shell.
 - Added true solar time correction support.
 - Added free-text birthplace matching.
+- Added independent birthplace inputs and true solar time correction for both
+  participants in the match flow before chart generation.
 - Added local city and region coordinate dataset from `88250/city-geo`.
 - Added Vercel Analytics.
 - Added GitHub Actions workflow to sync `ziwei/main` to `zwknows/main`.

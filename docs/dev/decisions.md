@@ -11,6 +11,11 @@ local coordinate dataset. The UI should keep this approachable for ordinary user
 Consequence: improvements should prefer better matching, aliases, and clear
 fallbacks over asking users for raw coordinates.
 
+All chart-generation entry points, including both participants in a match, must
+resolve birthplace and true solar time before calling iztro. The resolved result
+is stored with the birth data so chart generation does not apply the correction
+twice.
+
 ## D002 - Coordinate Data Is Local
 
 The app uses local coordinate data from `88250/city-geo` instead of relying on a

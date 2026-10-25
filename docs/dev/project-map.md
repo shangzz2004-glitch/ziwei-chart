@@ -23,6 +23,9 @@ Primary runtime flow:
 6. UI renders chart, fortune, match, K-line, share, and AI interpretation views.
 7. Knowledge retrieval grounds AI prompts with local structured guidance.
 
+The match flow performs steps 2-4 independently for both participants before
+building either chart or starting AI analysis.
+
 ## App Module Map
 
 <directory>
@@ -40,6 +43,8 @@ app/tests/ - Tests outside source tree, currently including workflow validation.
 - `app/src/components/BirthForm.tsx` - birth input, birthplace matching entry, and true solar time options.
 - `app/src/components/OpenSourceLinks.tsx` - GitHub repository and license links for open source attribution.
 - `app/src/lib/true-solar-time.ts` - true solar time calculation and birthplace matching helpers.
+- `app/src/lib/match-birth-info.ts` - prepares both match participants with independently resolved true solar time.
+- `app/src/components/match/MatchAnalysis.tsx` - dual birth input, local chart generation, and AI match analysis.
 - `app/src/lib/birthplace-data.json` - local city/region coordinate dataset.
 - `app/src/lib/birth-date.ts` - birth date handling.
 - `app/src/lib/astro.ts` - chart-facing astrology helpers.
