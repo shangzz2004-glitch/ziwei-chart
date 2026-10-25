@@ -57,6 +57,9 @@ time, birthplace data, LLM wiring, and scoring.
 
 `src/lib/true-solar-time.ts`: True solar time and birthplace matching logic.
 
+`src/lib/match-birth-info.ts`: Resolves each match participant's birthplace and
+true solar time before either chart is generated.
+
 `src/lib/birthplace-data.json`: Local coordinate dataset used for birthplace
 matching.
 
