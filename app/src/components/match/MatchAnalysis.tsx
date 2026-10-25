@@ -3,7 +3,7 @@
    分析两人命盘的契合度
    ============================================================ */
 
-import { useState, useCallback } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { useSettingsStore } from '@/stores'
@@ -12,7 +12,9 @@ import { clampDayToMonth, getDayOptions, getMonthOptions, getYearOptions } from 
 import { extractKnowledge, buildPromptContext } from '@/knowledge'
 import { buildGuidancePromptContext } from '@/knowledge-db'
 import { streamChat, type ChatMessage, type LLMConfig } from '@/lib/llm'
-import { Button, Select } from '@/components/ui'
+import { findBirthplaceAsync, type Birthplace } from '@/lib/true-solar-time'
+import { resolveMatchBirthInfo } from '@/lib/match-birth-info'
+import { Button, Input, Select } from '@/components/ui'
 
 /* ------------------------------------------------------------
    年份/月份/日期选项
@@ -117,8 +119,36 @@ interface PersonInputProps {
 }
 
 function PersonInput({ label, value, onChange }: PersonInputProps) {
-  const update = (field: keyof BirthInfo, val: number | Gender) => {
-    const next = { ...value, [field]: val }
+  const [matchedBirthplace, setMatchedBirthplace] = useState<Birthplace | null>(null)
+  const [matchingBirthplace, setMatchingBirthplace] = useState(false)
+  const trueSolarEnabled = value.trueSolarEnabled ?? true
+
+  useEffect(() => {
+    let active = true
+    const birthplace = value.birthplace?.trim() ?? ''
+
+    if (!trueSolarEnabled || !birthplace) {
+      setMatchedBirthplace(null)
+      setMatchingBirthplace(false)
+      return
+    }
+
+    setMatchingBirthplace(true)
+    findBirthplaceAsync(birthplace)
+      .then((place) => {
+        if (active) setMatchedBirthplace(place)
+      })
+      .finally(() => {
+        if (active) setMatchingBirthplace(false)
+      })
+
+    return () => {
+      active = false
+    }
+  }, [value.birthplace, trueSolarEnabled])
+
+  const update = <K extends keyof BirthInfo>(field: K, val: BirthInfo[K]) => {
+    const next = { ...value, [field]: val, resolvedBirthTime: undefined }
     if (field === 'year' || field === 'month') {
       next.day = clampDayToMonth(next.year, next.month, next.day)
     }
@@ -191,6 +221,48 @@ function PersonInput({ label, value, onChange }: PersonInputProps) {
             </label>
           ))}
         </div>
+        <Input
+          id={`match-${label}-birthplace`}
+          label="出生地（可选）"
+          placeholder="如：北京、成都、乌鲁木齐"
+          hint={
+            trueSolarEnabled
+              ? matchingBirthplace
+                ? '正在匹配出生地'
+                : matchedBirthplace
+                  ? `已匹配 ${matchedBirthplace.name}，合盘时会自动校正真太阳时`
+                  : value.birthplace?.trim()
+                    ? '暂未匹配该出生地，将按原时辰排盘'
+                    : '填写后将分别为双方校正真太阳时'
+              : '已关闭真太阳时校正'
+          }
+          value={value.birthplace ?? ''}
+          onChange={(event) => update('birthplace', event.target.value)}
+        />
+        <label className="flex items-center justify-between gap-4 rounded-lg bg-white/[0.04] border border-white/[0.08] px-3 py-2.5 cursor-pointer">
+          <span>
+            <span className="block text-sm text-text-secondary font-medium">自动真太阳时校正</span>
+            <span className="block text-xs text-text-muted mt-0.5">双方分别匹配出生地并校正</span>
+          </span>
+          <input
+            type="checkbox"
+            checked={trueSolarEnabled}
+            onChange={(event) => update('trueSolarEnabled', event.target.checked)}
+            className="h-5 w-5 accent-star"
+          />
+        </label>
+        {value.resolvedBirthTime && (
+          <div className="rounded-lg bg-star/10 border border-star/20 px-3 py-2 text-xs text-text-secondary">
+            <span className="text-text-muted">真太阳时：</span>{' '}
+            {value.resolvedBirthTime.applied
+              ? `${value.resolvedBirthTime.location?.name ?? '已匹配地点'} ${String(value.resolvedBirthTime.hour).padStart(2, '0')}:${String(value.resolvedBirthTime.minute).padStart(2, '0')}，${value.resolvedBirthTime.originalShichen === value.resolvedBirthTime.correctedShichen
+                ? '时辰不变'
+                : `${value.resolvedBirthTime.originalShichen}校正为${value.resolvedBirthTime.correctedShichen}`}`
+              : trueSolarEnabled && value.birthplace
+                ? '未匹配出生地，按原时辰排盘'
+                : '未启用校正'}
+          </div>
+        )}
       </div>
     </div>
   )
@@ -205,10 +277,10 @@ export function MatchAnalysis() {
   const currentSettings = providerSettings[provider]
 
   const [person1, setPerson1] = useState<BirthInfo>({
-    year: 1990, month: 1, day: 1, hour: 12, gender: 'male',
+    year: 1990, month: 1, day: 1, hour: 12, gender: 'male', trueSolarEnabled: true,
   })
   const [person2, setPerson2] = useState<BirthInfo>({
-    year: 1992, month: 6, day: 15, hour: 14, gender: 'female',
+    year: 1992, month: 6, day: 15, hour: 14, gender: 'female', trueSolarEnabled: true,
   })
   const [result, setResult] = useState('')
   const [loading, setLoading] = useState(false)
@@ -225,9 +297,16 @@ export function MatchAnalysis() {
     setResult('')
 
     try {
-      // 生成两人命盘
-      const chart1 = generateChart(person1)
-      const chart2 = generateChart(person2)
+      // 双方分别匹配出生地并完成真太阳时校正，再生成命盘。
+      const [resolvedPerson1, resolvedPerson2] = await Promise.all([
+        resolveMatchBirthInfo(person1),
+        resolveMatchBirthInfo(person2),
+      ])
+      setPerson1(resolvedPerson1)
+      setPerson2(resolvedPerson2)
+
+      const chart1 = generateChart(resolvedPerson1)
+      const chart2 = generateChart(resolvedPerson2)
 
       // 提取知识上下文
       const knowledge1 = extractKnowledge(chart1, person1.year)
@@ -248,8 +327,8 @@ export function MatchAnalysis() {
       const userMessage = `请分析以下两人的命盘契合度：
 
 ## 第一人
-- 出生：${person1.year}年${person1.month}月${person1.day}日
-- 性别：${person1.gender === 'male' ? '男' : '女'}
+- 出生：${resolvedPerson1.year}年${resolvedPerson1.month}月${resolvedPerson1.day}日
+- 性别：${resolvedPerson1.gender === 'male' ? '男' : '女'}
 - 五行局：${chart1.fiveElementsClass}
 
 ${context1}
@@ -257,8 +336,8 @@ ${context1}
 ${guidance1}
 
 ## 第二人
-- 出生：${person2.year}年${person2.month}月${person2.day}日
-- 性别：${person2.gender === 'male' ? '男' : '女'}
+- 出生：${resolvedPerson2.year}年${resolvedPerson2.month}月${resolvedPerson2.day}日
+- 性别：${resolvedPerson2.gender === 'male' ? '男' : '女'}
 - 五行局：${chart2.fiveElementsClass}
 
 ${context2}
